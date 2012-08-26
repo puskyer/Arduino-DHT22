@@ -102,7 +102,6 @@ DHT22_ERROR_t DHT22::readData()
     // Caller needs to wait 2 seconds between each call to readData
     return DHT_ERROR_TOOQUICK;
   }
-  _lastReadTime = currentTime;
 
   // Pin needs to start HIGH, wait until it is HIGH with a timeout
   cli();
@@ -205,6 +204,18 @@ DHT22_ERROR_t DHT22::readData()
     }
   }
 
+  // verify the data against the checksum
+  csPart1 = currentHumidity >> 8;
+  csPart2 = currentHumidity & 0xFF;
+  csPart3 = currentTemperature >> 8;
+  csPart4 = currentTemperature & 0xFF;
+  if(checkSum != ((csPart1 + csPart2 + csPart3 + csPart4) & 0xFF))
+  {
+    return DHT_ERROR_CHECKSUM;
+  }
+
+  // the checksum is valid - now we can update the readings
+  _lastReadTime = currentTime;
   _lastHumidity = currentHumidity & 0x7FFF;
   if(currentTemperature & 0x8000)
   {
@@ -217,15 +228,7 @@ DHT22_ERROR_t DHT22::readData()
     _lastTemperature = currentTemperature;
   }
 
-  csPart1 = currentHumidity >> 8;
-  csPart2 = currentHumidity & 0xFF;
-  csPart3 = currentTemperature >> 8;
-  csPart4 = currentTemperature & 0xFF;
-  if(checkSum == ((csPart1 + csPart2 + csPart3 + csPart4) & 0xFF))
-  {
-    return DHT_ERROR_NONE;
-  }
-  return DHT_ERROR_CHECKSUM;
+  return DHT_ERROR_NONE;
 }
 
 //
