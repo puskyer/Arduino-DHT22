@@ -39,9 +39,6 @@ class DHT22
 };
 
 // Report the humidity in .1 percent increments, such that 635 means 63.5% relative humidity
-//
-// Converts from the internal integer format on demand, so you might want
-// to cache the result.
 inline short int DHT22::getHumidityInt()
 {
   return _lastHumidity;
@@ -56,15 +53,14 @@ inline short int DHT22::getTemperatureCInt()
 
 #if !defined(DHT22_NO_FLOAT)
 // Return the percentage relative humidity in decimal form
+// Converts from the internal integer format on demand, so you might want
+// to cache the result.
 inline float DHT22::getHumidity()
 {
   return float(_lastHumidity) * (float)0.1;
 }
-#endif
 
-#if !defined(DHT22_NO_FLOAT)
 // Return the percentage relative humidity in decimal form
-//
 // Converts from the internal integer format on demand, so you might want
 // to cache the result.
 inline float DHT22::getTemperatureC()
