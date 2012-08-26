@@ -86,7 +86,7 @@ int wait_for_input(int timeout, int level) {
     delayMicroseconds(delayms);
     retryCount += delayms;
   }
-  return retryCount / 2;
+  return retryCount / delayms;
 }
 
 //
@@ -139,7 +139,7 @@ DHT22_ERROR_t DHT22::readData()
   if (wait_for_input(40, 0) < 0)
     return DHT_ERROR_NOT_PRESENT;
   // Find the end of the ACK Pulse
-  if (wait_for_input(40, 1) < 0)
+  if (wait_for_input(80, 1) < 0)
     return DHT_ERROR_ACK_TOO_LONG;
   // Read the 40 bit data stream
   for(i = 0; i < DHT22_DATA_BIT_COUNT; i++)
