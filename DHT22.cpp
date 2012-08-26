@@ -61,7 +61,7 @@ extern "C" {
 //#define DIRECT_WRITE_HIGH(base, mask)	((*(base+2)) |= (mask))
 
 // This should be 40, but the sensor is adding an extra bit at the start
-#define DHT22_DATA_BIT_COUNT 41
+#define DHT22_DATA_BIT_COUNT (40+1)
 
 DHT22::DHT22(uint8_t pin)
 {
