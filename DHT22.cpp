@@ -72,6 +72,23 @@ DHT22::DHT22(uint8_t pin)
     _lastTemperature = DHT22_ERROR_VALUE;
 }
 
+int wait_for_input(int timeout, int level) {
+  uint8_t bitmask = _bitmask;
+  volatile uint8_t *reg asm("r30") = _baseReg;
+  int retryCount = 0;
+  const int delayms = 2;
+  while(!!DIRECT_READ(reg, bitmask) == !!level)
+  {
+    if (retryCount > timeout)
+    {
+      return -1;
+    }
+    delayMicroseconds(delayms);
+    retryCount += delayms;
+  }
+  return retryCount / 2;
+}
+
 //
 // Read the 40 bit data stream from the DHT 22
 // Store the results in private member data to be read by public member functions
@@ -107,16 +124,8 @@ DHT22_ERROR_t DHT22::readData()
   cli();
   DIRECT_MODE_INPUT(reg, bitmask);
   sei();
-  retryCount = 0;
-  do
-  {
-    if (retryCount > 125)
-    {
-      return DHT_BUS_HUNG;
-    }
-    retryCount++;
-    delayMicroseconds(2);
-  } while(!DIRECT_READ(reg, bitmask));
+  if (wait_for_input(250, 0) < 0)
+    return DHT_BUS_HUNG;
   // Send the activate pulse
   cli();
   DIRECT_WRITE_LOW(reg, bitmask);
@@ -127,53 +136,21 @@ DHT22_ERROR_t DHT22::readData()
   DIRECT_MODE_INPUT(reg, bitmask);	// Switch back to input so pin can float
   sei();
   // Find the start of the ACK Pulse
-  retryCount = 0;
-  do
-  {
-    if (retryCount > 25) //(Spec is 20 to 40 us, 25*2 == 50 us)
-    {
-      return DHT_ERROR_NOT_PRESENT;
-    }
-    retryCount++;
-    delayMicroseconds(2);
-  } while(!DIRECT_READ(reg, bitmask));
+  if (wait_for_input(40, 0) < 0)
+    return DHT_ERROR_NOT_PRESENT;
   // Find the end of the ACK Pulse
-  retryCount = 0;
-  do
-  {
-    if (retryCount > 50) //(Spec is 80 us, 50*2 == 100 us)
-    {
-      return DHT_ERROR_ACK_TOO_LONG;
-    }
-    retryCount++;
-    delayMicroseconds(2);
-  } while(DIRECT_READ(reg, bitmask));
+  if (wait_for_input(40, 1) < 0)
+    return DHT_ERROR_ACK_TOO_LONG;
   // Read the 40 bit data stream
   for(i = 0; i < DHT22_DATA_BIT_COUNT; i++)
   {
     // Find the start of the sync pulse
-    retryCount = 0;
-    do
-    {
-      if (retryCount > 35) //(Spec is 50 us, 35*2 == 70 us)
-      {
-        return DHT_ERROR_SYNC_TIMEOUT;
-      }
-      retryCount++;
-      delayMicroseconds(2);
-    } while(!DIRECT_READ(reg, bitmask));
+    if (wait_for_input(50, 0) < 0)
+      return DHT_ERROR_SYNC_TIMEOUT;
     // Measure the width of the data pulse
-    retryCount = 0;
-    do
-    {
-      if (retryCount > 50) //(Spec is 80 us, 50*2 == 100 us)
-      {
-        return DHT_ERROR_DATA_TIMEOUT;
-      }
-      retryCount++;
-      delayMicroseconds(2);
-    } while(DIRECT_READ(reg, bitmask));
-    bitTimes[i] = retryCount;
+    bitTimes[i] = wait_for_input(80, 0);
+    if (bitTimes[i] < 0)
+      return DHT_ERROR_DATA_TIMEOUT;
   }
   // Now bitTimes have the number of retries (us *2)
   // that were needed to find the end of each data bit
