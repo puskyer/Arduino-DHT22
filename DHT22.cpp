@@ -205,16 +205,16 @@ DHT22_ERROR_t DHT22::readData()
     }
   }
 
-  _lastHumidity = (float(currentHumidity & 0x7FFF) / 10.0);
+  _lastHumidity = float(currentHumidity & 0x7FFF);
   if(currentTemperature & 0x8000)
   {
     // Below zero, non standard way of encoding negative numbers!
     // Convert to native negative format.
-    _lastTemperature = (float(currentTemperature & 0x7FFF) / 10.0) * -1.0;
+    _lastTemperature = float(currentTemperature & 0x7FFF) * -1.0;
   }
   else
   {
-    _lastTemperature = float(currentTemperature) / 10.0;
+    _lastTemperature = float(currentTemperature);
   }
 
   csPart1 = currentHumidity >> 8;
