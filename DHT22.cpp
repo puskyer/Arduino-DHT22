@@ -61,7 +61,7 @@ extern "C" {
 //#define DIRECT_WRITE_HIGH(base, mask)	((*(base+2)) |= (mask))
 
 // This should be 40, but the sensor is adding an extra bit at the start
-#define DHT22_DATA_BIT_COUNT 41
+#define DHT22_DATA_BIT_COUNT (40+1)
 
 DHT22::DHT22(uint8_t pin)
 {
@@ -70,6 +70,23 @@ DHT22::DHT22(uint8_t pin)
     _lastReadTime = millis();
     _lastHumidity = DHT22_ERROR_VALUE;
     _lastTemperature = DHT22_ERROR_VALUE;
+}
+
+int wait_for_input(int timeout, int level) {
+  uint8_t bitmask = _bitmask;
+  volatile uint8_t *reg asm("r30") = _baseReg;
+  int retryCount = 0;
+  const int delayms = 2;
+  while(!!DIRECT_READ(reg, bitmask) == !!level)
+  {
+    if (retryCount > timeout)
+    {
+      return -1;
+    }
+    delayMicroseconds(delayms);
+    retryCount += delayms;
+  }
+  return retryCount / delayms;
 }
 
 //
@@ -102,22 +119,13 @@ DHT22_ERROR_t DHT22::readData()
     // Caller needs to wait 2 seconds between each call to readData
     return DHT_ERROR_TOOQUICK;
   }
-  _lastReadTime = currentTime;
 
   // Pin needs to start HIGH, wait until it is HIGH with a timeout
   cli();
   DIRECT_MODE_INPUT(reg, bitmask);
   sei();
-  retryCount = 0;
-  do
-  {
-    if (retryCount > 125)
-    {
-      return DHT_BUS_HUNG;
-    }
-    retryCount++;
-    delayMicroseconds(2);
-  } while(!DIRECT_READ(reg, bitmask));
+  if (wait_for_input(250, 0) < 0)
+    return DHT_BUS_HUNG;
   // Send the activate pulse
   cli();
   DIRECT_WRITE_LOW(reg, bitmask);
@@ -128,53 +136,21 @@ DHT22_ERROR_t DHT22::readData()
   DIRECT_MODE_INPUT(reg, bitmask);	// Switch back to input so pin can float
   sei();
   // Find the start of the ACK Pulse
-  retryCount = 0;
-  do
-  {
-    if (retryCount > 25) //(Spec is 20 to 40 us, 25*2 == 50 us)
-    {
-      return DHT_ERROR_NOT_PRESENT;
-    }
-    retryCount++;
-    delayMicroseconds(2);
-  } while(!DIRECT_READ(reg, bitmask));
+  if (wait_for_input(40, 0) < 0)
+    return DHT_ERROR_NOT_PRESENT;
   // Find the end of the ACK Pulse
-  retryCount = 0;
-  do
-  {
-    if (retryCount > 50) //(Spec is 80 us, 50*2 == 100 us)
-    {
-      return DHT_ERROR_ACK_TOO_LONG;
-    }
-    retryCount++;
-    delayMicroseconds(2);
-  } while(DIRECT_READ(reg, bitmask));
+  if (wait_for_input(80, 1) < 0)
+    return DHT_ERROR_ACK_TOO_LONG;
   // Read the 40 bit data stream
   for(i = 0; i < DHT22_DATA_BIT_COUNT; i++)
   {
     // Find the start of the sync pulse
-    retryCount = 0;
-    do
-    {
-      if (retryCount > 35) //(Spec is 50 us, 35*2 == 70 us)
-      {
-        return DHT_ERROR_SYNC_TIMEOUT;
-      }
-      retryCount++;
-      delayMicroseconds(2);
-    } while(!DIRECT_READ(reg, bitmask));
+    if (wait_for_input(50, 0) < 0)
+      return DHT_ERROR_SYNC_TIMEOUT;
     // Measure the width of the data pulse
-    retryCount = 0;
-    do
-    {
-      if (retryCount > 50) //(Spec is 80 us, 50*2 == 100 us)
-      {
-        return DHT_ERROR_DATA_TIMEOUT;
-      }
-      retryCount++;
-      delayMicroseconds(2);
-    } while(DIRECT_READ(reg, bitmask));
-    bitTimes[i] = retryCount;
+    bitTimes[i] = wait_for_input(80, 0);
+    if (bitTimes[i] < 0)
+      return DHT_ERROR_DATA_TIMEOUT;
   }
   // Now bitTimes have the number of retries (us *2)
   // that were needed to find the end of each data bit
@@ -205,6 +181,18 @@ DHT22_ERROR_t DHT22::readData()
     }
   }
 
+  // verify the data against the checksum
+  csPart1 = currentHumidity >> 8;
+  csPart2 = currentHumidity & 0xFF;
+  csPart3 = currentTemperature >> 8;
+  csPart4 = currentTemperature & 0xFF;
+  if(checkSum != ((csPart1 + csPart2 + csPart3 + csPart4) & 0xFF))
+  {
+    return DHT_ERROR_CHECKSUM;
+  }
+
+  // the checksum is valid - now we can update the readings
+  _lastReadTime = currentTime;
   _lastHumidity = currentHumidity & 0x7FFF;
   if(currentTemperature & 0x8000)
   {
@@ -217,15 +205,7 @@ DHT22_ERROR_t DHT22::readData()
     _lastTemperature = currentTemperature;
   }
 
-  csPart1 = currentHumidity >> 8;
-  csPart2 = currentHumidity & 0xFF;
-  csPart3 = currentTemperature >> 8;
-  csPart4 = currentTemperature & 0xFF;
-  if(checkSum == ((csPart1 + csPart2 + csPart3 + csPart4) & 0xFF))
-  {
-    return DHT_ERROR_NONE;
-  }
-  return DHT_ERROR_CHECKSUM;
+  return DHT_ERROR_NONE;
 }
 
 //
